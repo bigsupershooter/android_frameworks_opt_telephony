@@ -26,6 +26,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.media.AudioManager;
 import android.net.ConnectivityManager;
 import android.os.Handler;
 import android.os.Message;
@@ -61,7 +62,10 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
 
     public SamsungCDMAv6RIL(Context context, int networkMode, int cdmaSubscription) {
         super(context, networkMode, cdmaSubscription);
+        audioManager = (AudioManager)mContext.getSystemService(Context.AUDIO_SERVICE);
     }
+
+    private AudioManager audioManager;
 
     // SAMSUNG SGS STATES
     static final int RIL_UNSOL_O2_HOME_ZONE_INFO = 11007;
@@ -72,6 +76,8 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
     static final int RIL_UNSOL_DUN_PIN_CONTROL_SIGNAL = 11011;
     static final int RIL_UNSOL_HSDPA_STATE_CHANGED = 11016;
     static final int RIL_REQUEST_DIAL_EMERGENCY = 10016;
+    static final int RIL_UNSOL_WB_AMR_STATE = 11017;
+    static final int RIL_UNSOL_TWO_MIC_STATE = 11018;
 
     static String
     requestToString(int request) {
@@ -89,6 +95,8 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
         case RIL_UNSOL_AM: return "RIL_UNSOL_AM";
         case RIL_UNSOL_DUN_PIN_CONTROL_SIGNAL: return "RIL_UNSOL_DUN_PIN_CONTROL_SIGNAL";
         case RIL_UNSOL_DATA_SUSPEND_RESUME: return "RIL_UNSOL_DATA_SUSPEND_RESUME";
+        case RIL_UNSOL_TWO_MIC_STATE: return "RIL_UNSOL_TWO_MIC_STATE";
+        case RIL_UNSOL_WB_AMR_STATE: return "RIL_UNSOL_WB_AMR_STATE";
         default:  return "<unknown response: "+request+">";
     }
 }
@@ -376,6 +384,8 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
         case RIL_UNSOL_DUN_PIN_CONTROL_SIGNAL: ret = responseVoid(p); break;
         case RIL_UNSOL_DATA_SUSPEND_RESUME: ret = responseInts(p); break;
         case RIL_UNSOL_RIL_CONNECTED: ret = responseString(p); break;
+        case RIL_UNSOL_TWO_MIC_STATE: ret = responseInts(p); break;
+        case RIL_UNSOL_WB_AMR_STATE: ret = responseInts(p); break;
 
         default:
             // Rewind the Parcel
@@ -487,6 +497,13 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
                 break;
             case RIL_UNSOL_DATA_SUSPEND_RESUME:
                 if (RILJ_LOGD) samsungUnsljLogRet(response, ret);
+                break;
+            case RIL_UNSOL_TWO_MIC_STATE:
+                if (RILJ_LOGD) samsungUnsljLogRet(response, ret);
+                break;
+            case RIL_UNSOL_WB_AMR_STATE:
+                if (RILJ_LOGD) samsungUnsljLogRet(response, ret);
+                setWbAmr(((int[])ret)[0]);
                 break;
         }
     }
@@ -821,6 +838,21 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
         }
 
         super.notifyRegistrantsCdmaInfoRec(infoRec);
+    }
+
+    /**
+     * Set audio parameter "wb_amr" for HD-Voice (Wideband AMR).
+     *
+     * @param state: 0 = unsupported, 1 = supported.
+     */
+    private void setWbAmr(int state) {
+        if (state == 1) {
+            Log.d(LOG_TAG, "setWbAmr(): setting audio parameter - wb_amr=on");
+            audioManager.setParameters("wb_amr=on");
+        } else {
+            Log.d(LOG_TAG, "setWbAmr(): setting audio parameter - wb_amr=off");
+            audioManager.setParameters("wb_amr=off");
+        }
     }
 
     protected class SamsungDriverCall extends DriverCall {
