@@ -916,7 +916,7 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
         }
 
         // When the modem responds Phone.NT_MODE_GLOBAL, it means Phone.NT_MODE_WCDMA_PREF
-        if (!mIsSamsungCdma && response[0] == Phone.NT_MODE_GLOBAL) {
+        if (response[0] == Phone.NT_MODE_GLOBAL) {
             Log.d(LOG_TAG, "Overriding network type response from GLOBAL to WCDMA preferred");
             response[0] = Phone.NT_MODE_WCDMA_PREF;
         }
@@ -929,6 +929,7 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
     responseSignalStrength(Parcel p) {
         int numInts = 12;
         int response[];
+        boolean isGsm = true;
 
         // Get raw data
         response = new int[numInts];
@@ -972,7 +973,7 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
         }
 
         SignalStrength signalStrength = new SignalStrength(mGsmSignalStrength, response[1], response[2],
-                    response[3], response[4], response[5], response[6], !mIsSamsungCdma);
+                    response[3], response[4], response[5], response[6], isGsm);
 
         return signalStrength;
     }
