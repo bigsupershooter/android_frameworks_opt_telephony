@@ -655,7 +655,7 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
                         // When SIM is PIN-unlocked, RIL doesn't respond with RIL_UNSOL_RESPONSE_SIM_STATUS_CHANGED.
                         // We notify the system here.
                         Log.d(LOG_TAG, "SIM is PIN-unlocked now");
-                        if (mIccStatusChangedRegistrants != null) {
+                        if (mIccStatusChangedRegistrants != null && !mIsSamsungCdma) {
                             mIccStatusChangedRegistrants.notifyRegistrants();
                         }
                         break;
