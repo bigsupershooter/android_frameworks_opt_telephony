@@ -874,11 +874,11 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
 
         for (int i = 0 ; i < num ; i++) {
 
-          //if (mIsSamsungCdma) {
-          //  dc                      = new SamsungDriverCall();
-          //} else {
+          if (mIsSamsungCdma) {
+            dc                      = new SamsungDriverCall();
+          } else {
             dc                      = new DriverCall();
-          //}
+          }
             dc.state                = DriverCall.stateFromCLCC(p.readInt());
             dc.index                = p.readInt();
             dc.TOA                  = p.readInt();
@@ -946,7 +946,7 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
         return response;
     }
 
-    /*protected class SamsungDriverCall extends DriverCall {
+    protected class SamsungDriverCall extends DriverCall {
         @Override
         public String
         toString() {
@@ -966,7 +966,7 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
             + "name=" + name + ","
             + namePresentation;
         }
-    }*/
+    }
 
     @Override
     protected Object responseGetPreferredNetworkType(Parcel p) {
