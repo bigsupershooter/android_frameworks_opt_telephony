@@ -617,6 +617,9 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
             case RIL_UNSOL_RESPONSE_NEW_BROADCAST_SMS: ret = responseString(p); break;
             case RIL_UNSOL_RIL_CONNECTED: ret = responseInts(p); break;
             case RIL_UNSOL_CDMA_INFO_REC: ret = responseCdmaInformationRecord(p); break;
+            case RIL_UNSOL_NITZ_TIME_RECEIVED: ret =  responseString(p); break;
+            case RIL_UNSOL_SIGNAL_STRENGTH: ret = responseSignalStrength(p); break;
+            case RIL_UNSOL_HSDPA_STATE_CHANGED: ret = responseInts(p); break;
             // SAMSUNG STATES
             case RIL_UNSOL_AM: ret = responseString(p); break;
             case RIL_UNSOL_DUN_PIN_CONTROL_SIGNAL: ret = responseVoid(p); break;
@@ -694,6 +697,67 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
                 for (CdmaInformationRecords rec : listInfoRecs) {
                     if (RILJ_LOGD) unsljLogRet(response, rec);
                     notifyRegistrantsCdmaInfoRec(rec);
+                }
+                break;
+            case RIL_UNSOL_HSDPA_STATE_CHANGED:
+                if (RILJ_LOGD) unsljLog(response);
+
+                boolean newHsdpa = ((int[])ret)[0] == 1;
+                String curState = SystemProperties.get(TelephonyProperties.PROPERTY_DATA_NETWORK_TYPE);
+                boolean curHsdpa = false;
+
+                if (curState.equals("HSDPA:9")) {
+                    curHsdpa = true;
+                } else if (!curState.equals("UMTS:3")) {
+                    // Don't send poll request if not on 3g
+                    break;
+                }
+
+                if (curHsdpa != newHsdpa) {
+                    mVoiceNetworkStateRegistrants
+                    .notifyRegistrants(new AsyncResult(null, null, null));
+                }
+                break;
+            case RIL_UNSOL_NITZ_TIME_RECEIVED:
+                if (RILJ_LOGD) unsljLogRet(response, ret);
+
+                // has bonus long containing milliseconds since boot that the NITZ
+                // time was received
+                long nitzReceiveTime = p.readLong();
+
+                Object[] result = new Object[2];
+
+                String nitz = (String)ret;
+                if (RILJ_LOGD) riljLog(" RIL_UNSOL_NITZ_TIME_RECEIVED length = "
+                                         + nitz.split("[/:,+-]").length);
+
+                // remove the tailing information that samsung added to the string
+                if(nitz.split("[/:,+-]").length >= 9)
+                nitz = nitz.substring(0,(nitz.lastIndexOf(",")));
+
+                if (RILJ_LOGD) riljLog(" RIL_UNSOL_NITZ_TIME_RECEIVED striped nitz = "
+                                         + nitz);
+
+                result[0] = nitz;
+                result[1] = Long.valueOf(nitzReceiveTime);
+
+                if (mNITZTimeRegistrant != null) {
+
+                    mNITZTimeRegistrant
+                    .notifyRegistrant(new AsyncResult (null, result, null));
+                } else {
+                    // in case NITZ time registrant isnt registered yet
+                    mLastNITZTimeInfo = nitz;
+                }
+                break;
+            case RIL_UNSOL_SIGNAL_STRENGTH:
+                // Note this is set to "verbose" because it happens
+                // frequently
+                if (RILJ_LOGV) unsljLogvRet(response, ret);
+
+                if (mSignalStrengthRegistrant != null) {
+                    mSignalStrengthRegistrant.notifyRegistrant(
+                        new AsyncResult (null, ret, null));
                 }
                 break;
             // SAMSUNG STATES
