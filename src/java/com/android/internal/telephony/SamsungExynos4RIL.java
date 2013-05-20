@@ -56,6 +56,8 @@ import com.android.internal.telephony.gsm.SmsBroadcastConfigInfo;
 import com.android.internal.telephony.gsm.SuppServiceNotification;
 import com.android.internal.telephony.cdma.CdmaCallWaitingNotification;
 import com.android.internal.telephony.cdma.CdmaInformationRecords;
+import com.android.internal.telephony.cdma.CdmaInformationRecords.CdmaSignalInfoRec;
+import com.android.internal.telephony.cdma.SignalToneUtil;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
@@ -156,11 +158,14 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
     protected ConnectivityHandler mSamsungExynos4RILHandler;
     private AudioManager audioManager;
     private boolean mIsGBModem = SystemProperties.getBoolean("ro.ril.gbmodem", false);
+    private boolean isGSM;
 
     public SamsungExynos4RIL(Context context, int networkMode, int cdmaSubscription) {
         super(context, networkMode, cdmaSubscription);
         audioManager = (AudioManager)mContext.getSystemService(Context.AUDIO_SERVICE);
         mQANElements = 5;
+        isGSM = (mPhoneType != RILConstants.CDMA_PHONE);
+        samsungDriverCall = ( ( !(needsOldRilFeature("newDriverCall")) ) );
     }
 
     static String
@@ -397,7 +402,7 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
         // either command succeeds or command fails but with data payload
         try {switch (rr.mRequest) {
 
-            case RIL_REQUEST_GET_SIM_STATUS: ret =  responseIccCardStatus(p); break;
+            case RIL_REQUEST_GET_SIM_STATUS: ret = responseIccCardStatus(p); break;
             case RIL_REQUEST_ENTER_SIM_PIN: ret =  responseInts(p); break;
             case RIL_REQUEST_ENTER_SIM_PUK: ret =  responseInts(p); break;
             case RIL_REQUEST_ENTER_SIM_PIN2: ret =  responseInts(p); break;
@@ -562,7 +567,7 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
     public void
     dial(String address, int clirMode, UUSInfo uusInfo, Message result) {
         RILRequest rr;
-        if (PhoneNumberUtils.isEmergencyNumber(address)) {
+        if (isGSM && PhoneNumberUtils.isEmergencyNumber(address)) {
             dialEmergencyCall(address, clirMode, result);
             return;
         }
@@ -613,6 +618,7 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
             case RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED: ret =  responseVoid(p); break;
             case RIL_UNSOL_RESPONSE_NEW_BROADCAST_SMS: ret = responseString(p); break;
             case RIL_UNSOL_RIL_CONNECTED: ret = responseInts(p); break;
+            case RIL_UNSOL_CDMA_INFO_REC: ret = responseCdmaInformationRecord(p); break;
             // SAMSUNG STATES
             case RIL_UNSOL_AM: ret = responseString(p); break;
             case RIL_UNSOL_DUN_PIN_CONTROL_SIGNAL: ret = responseVoid(p); break;
@@ -651,7 +657,7 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
                         // When SIM is PIN-unlocked, RIL doesn't respond with RIL_UNSOL_RESPONSE_SIM_STATUS_CHANGED.
                         // We notify the system here.
                         Log.d(LOG_TAG, "SIM is PIN-unlocked now");
-                        if (mIccStatusChangedRegistrants != null) {
+                        if (isGSM && mIccStatusChangedRegistrants != null) {
                             mIccStatusChangedRegistrants.notifyRegistrants();
                         }
                         break;
@@ -676,6 +682,21 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
                 sendPreferedNetworktype(mPreferredNetworkType, null);
                 setCdmaSubscriptionSource(mCdmaSubscription, null);
                 notifyRegistrantsRilConnectionChanged(((int[])ret)[0]);
+                break;
+            case RIL_UNSOL_CDMA_INFO_REC:
+                ArrayList<CdmaInformationRecords> listInfoRecs;
+
+                try {
+                    listInfoRecs = (ArrayList<CdmaInformationRecords>)ret;
+                } catch (ClassCastException e) {
+                    Log.e(LOG_TAG, "Unexpected exception casting to listInfoRecs", e);
+                    break;
+                }
+
+                for (CdmaInformationRecords rec : listInfoRecs) {
+                    if (RILJ_LOGD) unsljLogRet(response, rec);
+                    notifyRegistrantsCdmaInfoRec(rec);
+                }
                 break;
             // SAMSUNG STATES
             case RIL_UNSOL_AM:
@@ -770,121 +791,9 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
 
     @Override
     protected Object
-    responseCallList(Parcel p) {
-        int num;
-        boolean isVideo;
-        ArrayList<DriverCall> response;
-        DriverCall dc;
-        int dataAvail = p.dataAvail();
-        int pos = p.dataPosition();
-        int size = p.dataSize();
-
-        Log.d(LOG_TAG, "Parcel size = " + size);
-        Log.d(LOG_TAG, "Parcel pos = " + pos);
-        Log.d(LOG_TAG, "Parcel dataAvail = " + dataAvail);
-
-        //Samsung changes
-        num = p.readInt();
-
-        Log.d(LOG_TAG, "num = " + num);
-        response = new ArrayList<DriverCall>(num);
-
-        for (int i = 0 ; i < num ; i++) {
-
-            dc                      = new DriverCall();
-            dc.state                = DriverCall.stateFromCLCC(p.readInt());
-            dc.index                = p.readInt();
-            dc.TOA                  = p.readInt();
-            dc.isMpty               = (0 != p.readInt());
-            dc.isMT                 = (0 != p.readInt());
-            dc.als                  = p.readInt();
-            dc.isVoice              = (0 != p.readInt());
-            isVideo                 = (0 != p.readInt());
-            dc.isVoicePrivacy       = (0 != p.readInt());
-            dc.number               = p.readString();
-            int np                  = p.readInt();
-            dc.numberPresentation   = DriverCall.presentationFromCLIP(np);
-            dc.name                 = p.readString();
-            dc.namePresentation     = p.readInt();
-            int uusInfoPresent      = p.readInt();
-
-            Log.d(LOG_TAG, "state = " + dc.state);
-            Log.d(LOG_TAG, "index = " + dc.index);
-            Log.d(LOG_TAG, "state = " + dc.TOA);
-            Log.d(LOG_TAG, "isMpty = " + dc.isMpty);
-            Log.d(LOG_TAG, "isMT = " + dc.isMT);
-            Log.d(LOG_TAG, "als = " + dc.als);
-            Log.d(LOG_TAG, "isVoice = " + dc.isVoice);
-            Log.d(LOG_TAG, "isVideo = " + isVideo);
-            Log.d(LOG_TAG, "number = " + dc.number);
-            Log.d(LOG_TAG, "np = " + np);
-            Log.d(LOG_TAG, "name = " + dc.name);
-            Log.d(LOG_TAG, "namePresentation = " + dc.namePresentation);
-            Log.d(LOG_TAG, "uusInfoPresent = " + uusInfoPresent);
-
-            if (uusInfoPresent == 1) {
-                dc.uusInfo = new UUSInfo();
-                dc.uusInfo.setType(p.readInt());
-                dc.uusInfo.setDcs(p.readInt());
-                byte[] userData = p.createByteArray();
-                dc.uusInfo.setUserData(userData);
-                Log
-                .v(LOG_TAG, String.format("Incoming UUS : type=%d, dcs=%d, length=%d",
-                        dc.uusInfo.getType(), dc.uusInfo.getDcs(),
-                        dc.uusInfo.getUserData().length));
-                Log.v(LOG_TAG, "Incoming UUS : data (string)="
-                        + new String(dc.uusInfo.getUserData()));
-                Log.v(LOG_TAG, "Incoming UUS : data (hex): "
-                        + IccUtils.bytesToHexString(dc.uusInfo.getUserData()));
-            } else {
-                Log.v(LOG_TAG, "Incoming UUS : NOT present!");
-            }
-
-            // Make sure there's a leading + on addresses with a TOA of 145
-            dc.number = PhoneNumberUtils.stringFromStringAndTOA(dc.number, dc.TOA);
-
-            response.add(dc);
-
-            if (dc.isVoicePrivacy) {
-                mVoicePrivacyOnRegistrants.notifyRegistrants();
-                Log.d(LOG_TAG, "InCall VoicePrivacy is enabled");
-            } else {
-                mVoicePrivacyOffRegistrants.notifyRegistrants();
-                Log.d(LOG_TAG, "InCall VoicePrivacy is disabled");
-            }
-        }
-
-        Collections.sort(response);
-
-        return response;
-    }
-
-    @Override
-    protected Object responseGetPreferredNetworkType(Parcel p) {
-        int [] response = (int[]) responseInts(p);
-
-        if (response.length >= 1) {
-            // Since this is the response for getPreferredNetworkType
-            // we'll assume that it should be the value we want the
-            // vendor ril to take if we reestablish a connection to it.
-            mPreferredNetworkType = response[0];
-        }
-
-        // When the modem responds Phone.NT_MODE_GLOBAL, it means Phone.NT_MODE_WCDMA_PREF
-        if (response[0] == Phone.NT_MODE_GLOBAL) {
-            Log.d(LOG_TAG, "Overriding network type response from GLOBAL to WCDMA preferred");
-            response[0] = Phone.NT_MODE_WCDMA_PREF;
-        }
-
-        return response;
-    }
-
-    @Override
-    protected Object
     responseSignalStrength(Parcel p) {
         int numInts = 12;
         int response[];
-        boolean isGsm = true;
 
         // Get raw data
         response = new int[numInts];
@@ -892,45 +801,15 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
             response[i] = p.readInt();
         }
 
-        /*
-        Log.d(LOG_TAG, "gsmSignalStrength=" + response[0]);
-        Log.d(LOG_TAG, "gsmBitErrorRate=" + response[1]);
-        Log.d(LOG_TAG, "cdmaDbm=" + response[2]);
-        Log.d(LOG_TAG, "cdmaEcio=" + response[3]);
-        Log.d(LOG_TAG, "evdoDbm=" + response[4]);
-        Log.d(LOG_TAG, "evdoEcio=" + response[5]);
-        Log.d(LOG_TAG, "evdoSnr=" + response[6]);
-        Log.d(LOG_TAG, "lteSignalStrength=" + response[7]);
-        Log.d(LOG_TAG, "lteRsrp=" + response[8]);
-        Log.d(LOG_TAG, "lteRsrq=" + response[9]);
-        Log.d(LOG_TAG, "lteRssnr=" + response[10]);
-        Log.d(LOG_TAG, "lteCqi=" + response[11]);
-        */
+        //gsm
+        response[0] &= 0xff; //gsmDbm
 
-        int mGsmSignalStrength = response[0]; // Valid values are (0-31, 99) as defined in TS 27.007 8.5
-        Log.d(LOG_TAG, "responseSignalStrength (raw): gsmSignalStrength=" + mGsmSignalStrength);
-        mGsmSignalStrength = mGsmSignalStrength & 0xff; // Get the first 8 bits
-        Log.d(LOG_TAG, "responseSignalStrength (corrected): gsmSignalStrength=" + mGsmSignalStrength);
+        //cdma
+        // Take just the least significant byte as the signal strength
+        response[2] %= 256;
+        response[4] %= 256;
 
-        /* if mGsmSignalStrength isn't a valid value, use mCdmaDbm as fallback */
-        if (mGsmSignalStrength < 0 || (mGsmSignalStrength > 31 && response[0] != 99)) {
-            int mCdmaDbm = response[2];
-            Log.d(LOG_TAG, "responseSignalStrength-fallback (raw): gsmSignalStrength=" + mCdmaDbm);
-
-	        if (mCdmaDbm < 0) {
-	            mGsmSignalStrength = 99;
-	        } else if (mCdmaDbm > 31 && mCdmaDbm != 99) {
-	            mGsmSignalStrength = 31;
-	        } else {
-	            mGsmSignalStrength = mCdmaDbm;
-	        }
-            Log.d(LOG_TAG, "responseSignalStrength-fallback (corrected): gsmSignalStrength=" + mGsmSignalStrength);
-        }
-
-        SignalStrength signalStrength = new SignalStrength(mGsmSignalStrength, response[1], response[2],
-                    response[3], response[4], response[5], response[6], isGsm);
-
-        return signalStrength;
+        return new SignalStrength(response[0], response[1], response[2], response[3], response[4], response[5], response[6], isGSM);
     }
 
     @Override public void
@@ -946,13 +825,59 @@ public class SamsungExynos4RIL extends RIL implements CommandsInterface {
             Log.d(LOG_TAG, "RIL_REQUEST_VOICE_RADIO_TECH blocked!!!");
     }
 
+    // Workaround for Samsung CDMA "ring of death" bug:
+    //
+    // Symptom: As soon as the phone receives notice of an incoming call, an
+    //   audible "old fashioned ring" is emitted through the earpiece and
+    //   persists through the duration of the call, or until reboot if the call
+    //   isn't answered.
+    //
+    // Background: The CDMA telephony stack implements a number of "signal info
+    //   tones" that are locally generated by ToneGenerator and mixed into the
+    //   voice call path in response to radio RIL_UNSOL_CDMA_INFO_REC requests.
+    //   One of these tones, IS95_CONST_IR_SIG_IS54B_L, is requested by the
+    //   radio just prior to notice of an incoming call when the voice call
+    //   path is muted.  CallNotifier is responsible for stopping all signal
+    //   tones (by "playing" the TONE_CDMA_SIGNAL_OFF tone) upon receipt of a
+    //   "new ringing connection", prior to unmuting the voice call path.
+    //
+    // Problem: CallNotifier's incoming call path is designed to minimize
+    //   latency to notify users of incoming calls ASAP.  Thus,
+    //   SignalInfoTonePlayer requests are handled asynchronously by spawning a
+    //   one-shot thread for each.  Unfortunately the ToneGenerator API does
+    //   not provide a mechanism to specify an ordering on requests, and thus,
+    //   unexpected thread interleaving may result in ToneGenerator processing
+    //   them in the opposite order that CallNotifier intended.  In this case,
+    //   playing the "signal off" tone first, followed by playing the "old
+    //   fashioned ring" indefinitely.
+    //
+    // Solution: An API change to ToneGenerator is required to enable
+    //   SignalInfoTonePlayer to impose an ordering on requests (i.e., drop any
+    //   request that's older than the most recent observed).  Such a change,
+    //   or another appropriate fix should be implemented in AOSP first.
+    //
+    // Workaround: Intercept RIL_UNSOL_CDMA_INFO_REC requests from the radio,
+    //   check for a signal info record matching IS95_CONST_IR_SIG_IS54B_L, and
+    //   drop it so it's never seen by CallNotifier.  If other signal tones are
+    //   observed to cause this problem, they should be dropped here as well.
     @Override
-    public void getCdmaSubscriptionSource(Message response) {
-        RILRequest rr = RILRequest.obtain(
-                RILConstants.RIL_REQUEST_CDMA_GET_SUBSCRIPTION_SOURCE, response);
+    protected void
+    notifyRegistrantsCdmaInfoRec(CdmaInformationRecords infoRec) {
+        final int response = RIL_UNSOL_CDMA_INFO_REC;
 
-        if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
-        Log.d(LOG_TAG, "RIL_REQUEST_CDMA_GET_SUBSCRIPTION_SOURCE blocked!!!");
-        //send(rr);
+        if (infoRec.record instanceof CdmaSignalInfoRec) {
+            CdmaSignalInfoRec sir = (CdmaSignalInfoRec)infoRec.record;
+            if (sir != null && sir.isPresent &&
+                sir.signalType == SignalToneUtil.IS95_CONST_IR_SIGNAL_IS54B &&
+                sir.alertPitch == SignalToneUtil.IS95_CONST_IR_ALERT_MED    &&
+                sir.signal     == SignalToneUtil.IS95_CONST_IR_SIG_IS54B_L) {
+
+                Log.d(LOG_TAG, "Dropping \"" + responseToString(response) + " " +
+                      retToString(response, sir) + "\" to prevent \"ring of death\" bug.");
+                return;
+            }
+        }
+
+        super.notifyRegistrantsCdmaInfoRec(infoRec);
     }
 }
