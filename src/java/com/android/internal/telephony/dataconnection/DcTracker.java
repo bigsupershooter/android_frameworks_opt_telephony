@@ -53,8 +53,8 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneBase;
 import com.android.internal.telephony.DctConstants;
 import com.android.internal.telephony.EventLogTags;
-import com.android.internal.telephony.TelephonyProperties;
 import com.android.internal.telephony.gsm.GSMPhone;
+import com.android.internal.telephony.cdma.CDMAPhone;
 import com.android.internal.telephony.cdma.CdmaSubscriptionSourceManager;
 import com.android.internal.telephony.PhoneConstants;
 import com.android.internal.telephony.RILConstants;
@@ -150,6 +150,7 @@ public final class DcTracker extends DcTrackerBase {
 
         initApnContextsAndDataConnection();
 
+        log("SUPPORT_MPDN = " + SUPPORT_MPDN);
         for (ApnContext apnContext : mApnContexts.values()) {
             // Register the reconnect and restart actions.
             IntentFilter filter = new IntentFilter();
@@ -195,6 +196,9 @@ public final class DcTracker extends DcTrackerBase {
         mPhone.getContext().getContentResolver().unregisterContentObserver(mApnObserver);
         mApnContexts.clear();
 
+        if (mCdmaSsm != null) {
+            mCdmaSsm.dispose(this);
+        }
         if (mCdmaSsm != null) {
             mCdmaSsm.dispose(this);
         }
@@ -1333,6 +1337,11 @@ public final class DcTracker extends DcTrackerBase {
         setupDataOnConnectableApns(reason);
     }
 
+    private void onNvReady() {
+        if (DBG) log("onNvReady");
+        setupDataOnConnectableApns(Phone.REASON_NV_READY);
+    }
+
     @Override
     protected void onSetDependencyMet(String apnType, boolean met) {
         // don't allow users to tweak hipri to work around default dependency not met
@@ -1911,26 +1920,6 @@ public final class DcTracker extends DcTrackerBase {
         }
 
         if (mAllApnSettings.isEmpty()) {
-            if (mPhone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA) {
-                // Create dummy data profile.
-                if (DBG) log("createAllApnList: Creating dummy apn for cdma operator:" + operator);
-                String[] defaultApnTypes = {
-                    PhoneConstants.APN_TYPE_DEFAULT,
-                    PhoneConstants.APN_TYPE_MMS,
-                    PhoneConstants.APN_TYPE_SUPL,
-                    PhoneConstants.APN_TYPE_HIPRI,
-                    PhoneConstants.APN_TYPE_FOTA,
-                    PhoneConstants.APN_TYPE_IMS,
-                    PhoneConstants.APN_TYPE_CBS };
-                ApnSetting apn = new ApnSetting(DctConstants.APN_DEFAULT_ID, operator, null, null,
-                        null, null, null, null, null, null, null,
-                        RILConstants.SETUP_DATA_AUTH_PAP_CHAP, defaultApnTypes,"IP", "IP", true,
-                        0);
-                mAllApnSettings.add(apn);
-            }
-        }
-
-        if (mAllApnSettings.isEmpty()) {
             if (DBG) log("createAllApnList: No APN found for carrier: " + operator);
             mPreferredApn = null;
             // TODO: What is the right behavior?
@@ -1944,6 +1933,42 @@ public final class DcTracker extends DcTrackerBase {
             if (DBG) log("createAllApnList: mPreferredApn=" + mPreferredApn);
         }
         if (DBG) log("createAllApnList: X mAllApnSettings=" + mAllApnSettings);
+    }
+
+    private DataProfile createDummyCdmaProfile(String requestedApnType) {
+        if (DBG) log("createDummyCdmaProfile");
+        final String[] defaultApnTypes = {
+            PhoneConstants.APN_TYPE_DEFAULT,
+            PhoneConstants.APN_TYPE_MMS,
+            PhoneConstants.APN_TYPE_SUPL,
+            PhoneConstants.APN_TYPE_HIPRI,
+            PhoneConstants.APN_TYPE_FOTA,
+            PhoneConstants.APN_TYPE_IMS,
+            PhoneConstants.APN_TYPE_CBS,
+        };
+
+        final String[] dunApnTypes = {
+            PhoneConstants.APN_TYPE_DUN,
+        };
+
+        DataProfile profile = null;
+        if (mPhone.getPhoneType() == PhoneConstants.PHONE_TYPE_CDMA) {
+            // Create dummy data profile.
+            String[] types;
+            int apnId;
+            if ((PhoneConstants.APN_TYPE_DUN).equals(requestedApnType)) {
+                types = dunApnTypes;
+                apnId = DctConstants.APN_DUN_ID;
+            } else {
+                types = defaultApnTypes;
+                apnId = DctConstants.APN_DEFAULT_ID;
+            }
+            profile = new ApnSetting(apnId, null, null, null, null, null,
+                    null, null, null, null, null,
+                    RILConstants.SETUP_DATA_AUTH_PAP_CHAP, types,"IP",
+                    "IP", true, 0);
+        }
+        return profile;
     }
 
     /** Return the DC AsyncChannel for the new data connection */
@@ -1995,9 +2020,22 @@ public final class DcTracker extends DcTrackerBase {
             }
         }
 
+        int radioTech = mPhone.getServiceState().getRilDataRadioTechnology();
+
+        // For non OMH cards, use the dummy APNs for CDMA 1x/eVDO.
+        // 1x/eVDO calls will fail if we use the APNs for LTE/eHRPD.
+        if (radioTech != ServiceState.RIL_RADIO_TECHNOLOGY_EHRPD
+                && ServiceState.isCdma(radioTech)) {
+            apnList.add(createDummyCdmaProfile(requestedApnType));
+            if (DBG) {
+                log("buildWaitingApns: x added dummy cdma profile " +
+                        "apnList =" + apnList);
+            }
+            return apnList;
+        }
+
         IccRecords r = mIccRecords.get();
         String operator = (r != null) ? r.getOperatorNumeric() : "";
-        int radioTech = mPhone.getServiceState().getRilDataRadioTechnology();
 
         // This is a workaround for a bug (7305641) where we don't failover to other
         // suitable APNs if our preferred APN fails.  On prepaid ATT sims we need to
@@ -2057,14 +2095,21 @@ public final class DcTracker extends DcTrackerBase {
                         }
                     }
                 } else {
-                if (DBG) {
-                    log("buildWaitingApns: couldn't handle requesedApnType="
-                            + requestedApnType);
+                    if (DBG) {
+                        log("buildWaitingApns: couldn't handle requesedApnType="
+                                + requestedApnType);
+                    }
                 }
             }
-            }
         } else {
-            loge("mAllApnSettings is empty!");
+            log("mAllApnSettings is empty!");
+            // If there are no profiles found, create dummy profile
+            // for 1x/eVDO data calls.
+            if (radioTech != ServiceState.RIL_RADIO_TECHNOLOGY_EHRPD
+                    && ServiceState.isCdma(radioTech)) {
+                apnList.add(createDummyCdmaProfile(requestedApnType));
+                if (DBG) log("buildWaitingApns: added dummy cdma profile");
+            }
         }
         if (DBG) log("buildWaitingApns: X apnList=" + apnList);
         return apnList;
@@ -2234,6 +2279,13 @@ public final class DcTracker extends DcTrackerBase {
                 if (mCdmaSsm.getCdmaSubscriptionSource() ==
                         CdmaSubscriptionSourceManager.SUBSCRIPTION_FROM_NV) {
                     onRecordsLoaded(Phone.REASON_NV_READY);
+                }
+                break;
+
+            case DctConstants.EVENT_CDMA_SUBSCRIPTION_SOURCE_CHANGED:
+                if (mCdmaSsm.getCdmaSubscriptionSource() ==
+                        CdmaSubscriptionSourceManager.SUBSCRIPTION_FROM_NV) {
+                    onNvReady();
                 }
                 break;
 
