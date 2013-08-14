@@ -383,7 +383,8 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
         case RIL_UNSOL_DATA_SUSPEND_RESUME: ret = responseInts(p); break;
         case RIL_UNSOL_RIL_CONNECTED: ret = responseString(p); break;
         case RIL_UNSOL_TWO_MIC_STATE: ret = responseInts(p); break;
-            case RIL_UNSOL_WB_AMR_STATE: ret = responseInts(p); break;
+        case RIL_UNSOL_WB_AMR_STATE: ret = responseInts(p); break;
+        case RIL_UNSOL_DATA_CALL_LIST_CHANGED: ret =  responseVoid(p); break;
 
         default:
             // Rewind the Parcel
