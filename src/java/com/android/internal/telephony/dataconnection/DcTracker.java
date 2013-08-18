@@ -2262,7 +2262,9 @@ public final class DcTracker extends DcTrackerBase {
         }
 
         IccRecords newIccRecords = mUiccController.getIccRecords(UiccController.APP_FAM_3GPP);
-
+        if (newIccRecords == null) {
+            newIccRecords = mUiccController.getIccRecords(UiccController.APP_FAM_3GPP2);
+        }
         IccRecords r = mIccRecords.get();
         if (r != newIccRecords) {
             if (r != null) {
