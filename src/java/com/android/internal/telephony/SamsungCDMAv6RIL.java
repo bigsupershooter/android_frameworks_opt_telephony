@@ -745,6 +745,20 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
         return dataCall;
     }
 
+    @Override
+    protected Object
+    responseDataCallList(Parcel p) {
+        ArrayList<DataCallResponse> response;
+        int ver = p.readInt();
+        int num = p.readInt();
+        riljLog("responseDataCallList ver=" + ver + " num=" + num);
+        response = new ArrayList<DataCallResponse>(num);
+        for (int i = 0; i < num; i++) {
+            response.add(getDataCallResponse(p, ver));
+        }
+        return response;
+    }
+
     private boolean startPppdCdmaService(String ttyname) {
         SystemProperties.set("net.cdma.datalinkinterface", ttyname);
 
