@@ -2080,7 +2080,7 @@ public final class DcTracker extends DcTrackerBase {
                 mPreferredApn = null;
             }
         }
-        if (mAllApnSettings != null) {
+        if (mAllApnSettings != null && !mAllApnSettings.isEmpty()) {
             if (DBG) log("buildWaitingApns: mAllApnSettings=" + mAllApnSettings);
             for (ApnSetting apn : mAllApnSettings) {
                 if (DBG) log("buildWaitingApns: apn=" + apn);
@@ -2102,7 +2102,7 @@ public final class DcTracker extends DcTrackerBase {
                 }
             }
         } else {
-            log("mAllApnSettings is empty!");
+            loge("mAllApnSettings is empty!");
             // If there are no profiles found, create dummy profile
             // for 1x/eVDO data calls.
             if (radioTech != ServiceState.RIL_RADIO_TECHNOLOGY_EHRPD
