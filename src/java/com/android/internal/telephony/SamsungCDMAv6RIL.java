@@ -61,11 +61,6 @@ import android.telephony.Rlog;
 public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
 
     private AudioManager audioManager;
-    private String mIfname = "";
-    private String[] mAddresses = new String[] {};
-    private String[] mGateways  = new String[] {};
-    private String[] mDnses     = new String[] {};
-    private int mCid = -1;
 
     public SamsungCDMAv6RIL(Context context, int networkMode, int cdmaSubscription) {
         super(context, networkMode, cdmaSubscription);
@@ -621,6 +616,36 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
         return response;
     }
 
+    @Override
+    protected DataCallResponse getDataCallResponse(Parcel p, int version) {
+        DataCallResponse dataCall = new DataCallResponse();
+
+        dataCall.version = version;
+        dataCall.status = p.readInt();
+        dataCall.suggestedRetryTime = p.readInt();
+        dataCall.cid = p.readInt();
+        dataCall.active = p.readInt();
+        dataCall.type = p.readString();
+        dataCall.ifname = SystemProperties.get("net.cdma.ppp.interface");
+        if ((dataCall.status == DcFailCause.NONE.getErrorCode()) &&
+                TextUtils.isEmpty(dataCall.ifname)) {
+            throw new RuntimeException("getDataCallResponse, no ifname");
+        }
+        String addresses = p.readString();
+        if (!TextUtils.isEmpty(addresses)) {
+            dataCall.addresses = addresses.split(" ");
+        }
+        String dnses = p.readString();
+        if (!TextUtils.isEmpty(dnses)) {
+            dataCall.dnses = dnses.split(" ");
+        }
+        String gateways = p.readString();
+        if (!TextUtils.isEmpty(gateways)) {
+            dataCall.gateways = gateways.split(" ");
+        }
+        return dataCall;
+    }
+
     protected Object
     responseLastCallFailCause(Parcel p) {
         int response[] = (int[])responseInts(p);
@@ -684,38 +709,29 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
     }
 
     @Override
-    protected DataCallResponse getDataCallResponse(Parcel p, int version) {
+    protected Object
+    responseSetupDataCall(Parcel p) {
         DataCallResponse dataCall = new DataCallResponse();
         String strings[] = (String []) responseStrings(p);
 
-        if (strings.length >= 2 || version==88) {
-          if (strings[0] != null){
-            mCid = Integer.parseInt(strings[0]);
-          }
-          dataCall.cid = mCid;
+        if (strings.length >= 2) {
+            dataCall.cid = Integer.parseInt(strings[0]);
 
-          if (version==99) {
             // We're responsible for starting/stopping the pppd_cdma service.
             if (!startPppdCdmaService(strings[1])) {
                 // pppd_cdma service didn't respond timely.
                 dataCall.status = DcFailCause.ERROR_UNSPECIFIED.getErrorCode();
-                destroyData();
                 return dataCall;
             }
 
             // pppd_cdma service responded, pull network parameters set by ip-up script.
-            mIfname = SystemProperties.get("net.cdma.ppp.interface");
+            dataCall.ifname = SystemProperties.get("net.cdma.ppp.interface");
             String   ifprop = "net." + dataCall.ifname;
 
-            mAddresses = new String[] {SystemProperties.get(ifprop + ".local-ip")};
-            mGateways  = new String[] {SystemProperties.get(ifprop + ".remote-ip")};
-            mDnses     = new String[] {SystemProperties.get(ifprop + ".dns1"),
+            dataCall.addresses = new String[] {SystemProperties.get(ifprop + ".local-ip")};
+            dataCall.gateways  = new String[] {SystemProperties.get(ifprop + ".remote-ip")};
+            dataCall.dnses     = new String[] {SystemProperties.get(ifprop + ".dns1"),
                                                SystemProperties.get(ifprop + ".dns2")};
-          }
-          dataCall.ifname = mIfname;
-          dataCall.addresses = mAddresses;
-          dataCall.gateways = mGateways;
-          dataCall.dnses = mDnses;
         } else {
             // On rare occasion the pppd_cdma service is left active from a stale
             // session, causing the data call setup to fail.  Make sure that pppd_cdma
@@ -723,44 +739,23 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
             Rlog.d(RILJ_LOG_TAG, "Set ril.cdma.data_state=0 to make sure pppd_cdma is stopped.");
             SystemProperties.set("ril.cdma.data_state", "0");
 
-            destroyData();
             dataCall.status = DcFailCause.ERROR_UNSPECIFIED.getErrorCode(); // Who knows?
         }
 
         return dataCall;
     }
 
-    private void destroyData() {
-        mIfname = "";
-        mAddresses = new String[] {};
-        mGateways  = new String[] {};
-        mDnses     = new String[] {};
-        mCid = -1;
-    }
-
-    @Override
-    protected Object
-    responseSetupDataCall(Parcel p) {
-        int isSamsungCdmaStart = 3;
-        isSamsungCdmaStart = 99;
-
-        return getDataCallResponse(p, isSamsungCdmaStart);
-    }
-
     @Override
     protected Object
     responseDataCallList(Parcel p) {
         ArrayList<DataCallResponse> response;
-        int isSamsungCdmaStart = p.readInt();
+        int ver = p.readInt();
         int num = p.readInt();
-        isSamsungCdmaStart = 88;
-
-        riljLog("responseDataCallList ver=" + isSamsungCdmaStart + " num=" + num);
+        riljLog("responseDataCallList ver=" + ver + " num=" + num);
         response = new ArrayList<DataCallResponse>(num);
         for (int i = 0; i < num; i++) {
-            response.add(getDataCallResponse(p, isSamsungCdmaStart));
+            response.add(getDataCallResponse(p, ver));
         }
-
         return response;
     }
 
@@ -806,8 +801,6 @@ public class SamsungCDMAv6RIL extends RIL implements CommandsInterface {
         Rlog.d(RILJ_LOG_TAG, "Set ril.cdma.data_state=0.");
         SystemProperties.set("ril.cdma.data_state", "0");
 
-        // for mCid
-        destroyData();
         super.deactivateDataCall(cid, reason, result);
     }
 
