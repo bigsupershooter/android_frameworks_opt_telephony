@@ -470,7 +470,7 @@ public final class DataConnection extends StateMachine {
         }
 
         mPhone.mCi.setupDataCall(
-                Integer.toString(getRilRadioTechnology(cp.mRilRat)),
+                Integer.toString(getRilRadioTechnology(2 + cp.mRilRat)),
                 Integer.toString(dataProfileId),
                 mApnSetting.apn, mApnSetting.user, mApnSetting.password,
                 Integer.toString(authType),

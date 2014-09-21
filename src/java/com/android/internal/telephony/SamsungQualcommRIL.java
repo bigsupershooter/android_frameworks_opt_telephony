@@ -865,7 +865,7 @@ public class SamsungQualcommRIL extends RIL implements CommandsInterface {
 
     @Override
     public void getImsRegistrationState(Message result) {
-        if(mRilVersion >= 8)
+        if(mRilVersion >= 5)
             super.getImsRegistrationState(result);
         else {
             if (result != null) {
