@@ -2263,8 +2263,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
         rr.mParcel.writeString(address);
 
-        if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
-                + " : " + address);
+        if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
 
         send(rr);
     }
