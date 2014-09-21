@@ -470,7 +470,7 @@ public final class DataConnection extends StateMachine {
         }
 
         mPhone.mCi.setupDataCall(
-                Integer.toString(getRilRadioTechnology(cp.mRilRat)),
+                Integer.toString(getRilRadioTechnology(2 + cp.mRilRat)),
                 Integer.toString(dataProfileId),
                 mApnSetting.apn, mApnSetting.user, mApnSetting.password,
                 Integer.toString(authType),
@@ -785,9 +785,11 @@ public final class DataConnection extends StateMachine {
         }
         configureRetry(mApnSetting.canHandleType(PhoneConstants.APN_TYPE_DEFAULT));
         mRetryManager.setRetryCount(0);
+    if (mApnContexts.getWaitingApns().size() > 1)
+      {
         mRetryManager.setCurMaxRetryCount(mConnectionParams.mInitialMaxRetry);
         mRetryManager.setRetryForever(false);
-
+      }
         if (DBG) {
             log("initConnection: "
                     + " RefCount=" + mApnContexts.size()

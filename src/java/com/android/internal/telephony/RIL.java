@@ -982,7 +982,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
     dial(String address, int clirMode, UUSInfo uusInfo, Message result) {
         RILRequest rr = RILRequest.obtain(RIL_REQUEST_DIAL, result);
 
-        rr.mParcel.writeString(address);
+        rr.mParcel.writeString(address);getDataCallList
         rr.mParcel.writeInt(clirMode);
 
         if (uusInfo == null) {
@@ -2184,6 +2184,14 @@ public class RIL extends BaseCommands implements CommandsInterface {
     /**
      * {@inheritDoc}
      */
+
+   @Override
+  public void setPhoneType(int paramInt)
+  {
+    riljLog("setPhoneType=" + paramInt + " old value=" + this.mPhoneType);
+    this.mPhoneType = paramInt;
+  }
+
     @Override
     public void setPreferredNetworkType(int networkType , Message response) {
         RILRequest rr = RILRequest.obtain(
@@ -2191,7 +2199,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
         rr.mParcel.writeInt(1);
         rr.mParcel.writeInt(networkType);
-
+        setInitialPhoneType(paramInt);
         mSetPreferredNetworkType = networkType;
         mPreferredNetworkType = networkType;
 
@@ -2263,8 +2271,7 @@ public class RIL extends BaseCommands implements CommandsInterface {
 
         rr.mParcel.writeString(address);
 
-        if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest)
-                + " : " + address);
+        if (RILJ_LOGD) riljLog(rr.serialString() + "> " + requestToString(rr.mRequest));
 
         send(rr);
     }
@@ -2323,7 +2330,14 @@ public class RIL extends BaseCommands implements CommandsInterface {
             rr.mParcel.writeInt(config[i].getToServiceId());
             rr.mParcel.writeInt(config[i].getFromCodeScheme());
             rr.mParcel.writeInt(config[i].getToCodeScheme());
-            rr.mParcel.writeInt(config[i].isSelected() ? 1 : 0);
+            Parcel localParcel = rr.mParcel;
+      if (config[i].isSelected());
+         for (int m = 1; ; m = 0)
+          {setGsmBroadcastConfig
+           localParcel.writeInt(m);
+           j++;
+           break;
+           }
         }
 
         if (RILJ_LOGD) {
