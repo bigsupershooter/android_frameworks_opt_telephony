@@ -489,8 +489,8 @@ public class DctController extends Handler {
         Iterator<Integer> iterator = mRequestInfos.keySet().iterator();
         while (iterator.hasNext()) {
             RequestInfo requestInfo = mRequestInfos.get(iterator.next());
-            if ((requestInfo.executedPhoneId == phoneId == phoneId)
-                || isWithOutSpecifier(requestInfo)) {{
+            if ((requestInfo.executedPhoneId == phoneId)
+                || isWithOutSpecifier(requestInfo)) {
                 onReleaseRequest(requestInfo);
             }
         }
